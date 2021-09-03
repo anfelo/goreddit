@@ -4,24 +4,31 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/anfelo/goreddit"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/gorilla/csrf"
 )
 
-func NewHandler(store goreddit.Store, csrfKey []byte) *Handler {
+func NewHandler(
+	store goreddit.Store,
+	sessions *scs.SessionManager,
+	csrfKey []byte,
+) *Handler {
 	h := &Handler{
-		Mux:   chi.NewMux(),
-		store: store,
+		Mux:      chi.NewMux(),
+		store:    store,
+		sessions: sessions,
 	}
 
-	threads := ThreadHandler{store: store}
-	posts := PostHandler{store: store}
-	comments := CommentHandler{store: store}
+	threads := ThreadHandler{store: store, sessions: sessions}
+	posts := PostHandler{store: store, sessions: sessions}
+	comments := CommentHandler{store: store, sessions: sessions}
 
 	h.Use(middleware.Logger)
 	h.Use(csrf.Protect(csrfKey, csrf.Secure(false)))
+	h.Use(sessions.LoadAndSave)
 
 	h.Get("/", h.Home())
 	h.Route("/threads", func(r chi.Router) {
@@ -45,11 +52,13 @@ func NewHandler(store goreddit.Store, csrfKey []byte) *Handler {
 type Handler struct {
 	*chi.Mux
 
-	store goreddit.Store
+	store    goreddit.Store
+	sessions *scs.SessionManager
 }
 
 func (h *Handler) Home() http.HandlerFunc {
 	type data struct {
+		SessionData
 		Posts []goreddit.Post
 	}
 
@@ -63,6 +72,10 @@ func (h *Handler) Home() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		tmpl.Execute(w, data{Posts: pp})
+
+		tmpl.Execute(w, data{
+			SessionData: GetSessionData(h.sessions, r.Context()),
+			Posts:       pp,
+		})
 	}
 }

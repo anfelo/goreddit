@@ -3,19 +3,28 @@ package web
 import (
 	"net/http"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/anfelo/goreddit"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
 )
 
 type CommentHandler struct {
-	store goreddit.Store
+	store    goreddit.Store
+	sessions *scs.SessionManager
 }
 
 func (h *CommentHandler) Store() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		content := r.FormValue("content")
 		idStr := chi.URLParam(r, "postID")
+		form := CreateCommentForm{
+			Content: r.FormValue("content"),
+		}
+		if !form.Validate() {
+			h.sessions.Put(r.Context(), "form", form)
+			http.Redirect(w, r, r.Referer(), http.StatusFound)
+			return
+		}
 
 		id, err := uuid.Parse(idStr)
 		if err != nil {
@@ -26,11 +35,13 @@ func (h *CommentHandler) Store() http.HandlerFunc {
 		if err := h.store.CreateComment(&goreddit.Comment{
 			ID:      uuid.New(),
 			PostID:  id,
-			Content: content,
+			Content: form.Content,
 		}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		h.sessions.Put(r.Context(), "flash", "Your comment has been submitted.")
 
 		http.Redirect(w, r, r.Referer(), http.StatusFound)
 	}

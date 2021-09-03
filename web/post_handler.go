@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/anfelo/goreddit"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
@@ -11,11 +12,13 @@ import (
 )
 
 type PostHandler struct {
-	store goreddit.Store
+	store    goreddit.Store
+	sessions *scs.SessionManager
 }
 
 func (h *PostHandler) Create() http.HandlerFunc {
 	type data struct {
+		SessionData
 		CSRF   template.HTML
 		Thread goreddit.Thread
 	}
@@ -38,12 +41,17 @@ func (h *PostHandler) Create() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		tmpl.Execute(w, data{CSRF: csrf.TemplateField(r), Thread: t})
+		tmpl.Execute(w, data{
+			SessionData: GetSessionData(h.sessions, r.Context()),
+			CSRF:        csrf.TemplateField(r),
+			Thread:      t,
+		})
 	}
 }
 
 func (h *PostHandler) Show() http.HandlerFunc {
 	type data struct {
+		SessionData
 		CSRF     template.HTML
 		Thread   goreddit.Thread
 		Post     goreddit.Post
@@ -88,18 +96,26 @@ func (h *PostHandler) Show() http.HandlerFunc {
 		}
 
 		tmpl.Execute(w, data{
-			CSRF:     csrf.TemplateField(r),
-			Thread:   t,
-			Post:     p,
-			Comments: cc,
+			SessionData: GetSessionData(h.sessions, r.Context()),
+			CSRF:        csrf.TemplateField(r),
+			Thread:      t,
+			Post:        p,
+			Comments:    cc,
 		})
 	}
 }
 
 func (h *PostHandler) Store() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		title := r.FormValue("title")
-		content := r.FormValue("content")
+		form := CreatePostForm{
+			Title:   r.FormValue("title"),
+			Content: r.FormValue("content"),
+		}
+		if !form.Validate() {
+			h.sessions.Put(r.Context(), "form", form)
+			http.Redirect(w, r, r.Referer(), http.StatusFound)
+			return
+		}
 
 		idStr := chi.URLParam(r, "id")
 
@@ -118,13 +134,15 @@ func (h *PostHandler) Store() http.HandlerFunc {
 		p := &goreddit.Post{
 			ID:       uuid.New(),
 			ThreadID: t.ID,
-			Title:    title,
-			Content:  content,
+			Title:    form.Title,
+			Content:  form.Content,
 		}
 		if err := h.store.CreatePost(p); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		h.sessions.Put(r.Context(), "flash", "Your post has been created.")
 
 		http.Redirect(w, r, "/threads/"+t.ID.String()+"/"+p.ID.String(), http.StatusFound)
 	}
