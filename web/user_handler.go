@@ -40,7 +40,7 @@ func (h *UserHandler) RegisterSubmit() http.HandlerFunc {
 			Password:      r.FormValue("password"),
 			UsernameTaken: false,
 		}
-		if _, err := h.store.UserByUsername(form.Username); err != nil {
+		if _, err := h.store.UserByUsername(form.Username); err == nil {
 			form.UsernameTaken = true
 		}
 		if !form.Validate() {
