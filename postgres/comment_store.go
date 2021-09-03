@@ -14,7 +14,7 @@ type CommentStore struct {
 
 func (s *CommentStore) Comment(id uuid.UUID) (goreddit.Comment, error) {
 	var c goreddit.Comment
-	if err := s.Get(&c, `SELECT * FROM comment WHERE id = $1`, id); err != nil {
+	if err := s.Get(&c, `SELECT * FROM comments WHERE id = $1`, id); err != nil {
 		return goreddit.Comment{}, fmt.Errorf("error getting comment: %w", err)
 	}
 	return c, nil
@@ -22,7 +22,7 @@ func (s *CommentStore) Comment(id uuid.UUID) (goreddit.Comment, error) {
 
 func (s *CommentStore) CommentsByPost(postID uuid.UUID) ([]goreddit.Comment, error) {
 	var cc []goreddit.Comment
-	if err := s.Select(&cc, `SELECT * FROM comments WHERE post_id = $1`, postID); err != nil {
+	if err := s.Select(&cc, `SELECT * FROM comments WHERE post_id = $1 ORDER BY votes DESC`, postID); err != nil {
 		return []goreddit.Comment{}, fmt.Errorf("error getting comments: %w", err)
 	}
 	return cc, nil
